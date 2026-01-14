@@ -1,7 +1,7 @@
-# Използваме пълен образ за компилация, за да избегнем липсващи инструменти
-FROM rust:1.75-bookworm as builder
+# Използваме най-новата версия на Rust, за да избегнем проблемите със zerovec
+FROM rust:latest as builder
 
-# Инсталираме основните инструменти за компилация на зависимостите
+# Инсталираме нужните системни зависимости
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /usr/src/app
 COPY . .
 
-# Компилираме. Ако тук даде грешка, значи има проблем в main.rs
-RUN cargo build --release
+# Изпълняваме препоръката от грешката за всеки случай и компилираме
+RUN cargo update && cargo build --release
 
 # Втори етап: Лек образ за работа
 FROM debian:bookworm-slim
@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# ВНИМАНИЕ: Провери името на binary-то да е точно като в Cargo.toml
+# ВНИМАНИЕ: Провери дали името съвпада с Cargo.toml (напр. rusty-bandwidth)
 COPY --from=builder /usr/src/app/target/release/rusty-bandwidth /usr/local/bin/proxy
 
 EXPOSE 8080
