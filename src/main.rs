@@ -82,7 +82,9 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
 
     // 4. Енкодиране към WebP (тук беше "Unimplemented" грешката)
     let mut webp_data = Cursor::new(Vec::new());
-    match img.write_to(&mut webp_data, ImageOutputFormat::WebP) {
+    
+    // Използваме универсален метод за запис, който работи с повече версии
+    match img.write_to(&mut webp_data, image::ImageFormat::WebP) {
         Ok(_) => {
             let mut headers = HeaderMap::new();
             headers.insert(header::CONTENT_TYPE, "image/webp".parse().unwrap());
@@ -92,7 +94,6 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
         },
         Err(e) => {
             println!("WebP encoding error: {}", e);
-            // Ако WebP се провали, връщаме оригинала
             let mut headers = HeaderMap::new();
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
             (headers, bytes).into_response()
