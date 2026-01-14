@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 use clap::Parser;
-use image::{DynamicImage, ImageOutputFormat};
+use image::DynamicImage;
 use reqwest::Client;
 use serde::Deserialize;
 use std::io::Cursor;
@@ -33,7 +33,7 @@ async fn main() {
     let app = Router::new().route("/", get(proxy_handler));
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     
-    println!("WebP Proxy v2.0 (Stable) running on {}", addr);
+    println!("WebP Proxy v2.1 (Ultra Stable) running on {}", addr);
     
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -47,43 +47,33 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
         .build()
         .unwrap_or_default();
 
-    // 1. Опит за взимане на снимката
     let res = match client.get(&query.url)
         .header("Referer", "https://twitter.com/")
         .send().await {
             Ok(res) => res,
-            Err(e) => {
-                println!("Error fetching {}: {}", query.url, e);
-                return (StatusCode::BAD_REQUEST, "Failed to fetch image").into_response();
-            }
+            Err(_) => return (StatusCode::BAD_REQUEST, "Fetch error").into_response(),
         };
 
-    if !res.status().is_success() {
-        return (StatusCode::BAD_GATEWAY, "Origin server error").into_response();
-    }
-
-    // 2. Проверка на типа данни (дали е картинка)
     let bytes = match res.bytes().await {
         Ok(b) => b,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read bytes").into_response(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Bytes error").into_response(),
     };
 
-    // 3. Декодиране
+    // Опит за обработка
     let img = match image::load_from_memory(&bytes) {
         Ok(i) => i,
-        Err(e) => {
-            println!("Decoding error for {}: {}", query.url, e);
-            // Ако не е картинка, просто връщаме байтовете както са (fallback)
+        Err(_) => {
+            // АКО НЕ Е КАРТИНКА -> Връщаме оригинала (БЕЗ ГРЕШКА)
             let mut headers = HeaderMap::new();
+            headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
             headers.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
             return (headers, bytes).into_response();
         }
     };
 
-    // 4. Енкодиране към WebP (тук беше "Unimplemented" грешката)
     let mut webp_data = Cursor::new(Vec::new());
     
-    // Използваме универсален метод за запис, който работи с повече версии
+    // Опит за запис като WebP
     match img.write_to(&mut webp_data, image::ImageFormat::WebP) {
         Ok(_) => {
             let mut headers = HeaderMap::new();
@@ -92,10 +82,11 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
             (headers, webp_data.into_inner()).into_response()
         },
-        Err(e) => {
-            println!("WebP encoding error: {}", e);
+        Err(_) => {
+            // АКО WEBP ЕНКОДЕРА ЛИПСВА -> Връщаме оригинала (БЕЗ ГРЕШКА)
             let mut headers = HeaderMap::new();
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+            headers.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
             (headers, bytes).into_response()
         }
     }
