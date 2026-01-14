@@ -4,16 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Добавяме rustls-tls за HTTPS поддръжка без нужда от външни системни библиотеки
 reqwest = { version = "0.11", features = ["rustls-tls"] }
 hyper = { version = "0.14", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
-percent-encoding = "2.3" # Малко по-нова стабилна версия
+percent-encoding = "2.3"
 clap = { version = "4", features = ["derive", "env"] }
-
-# Използваме фиксирана версия на image за стабилност
 image = "0.24"
-
-# Библиотеки за компресия
 webp = "0.2"
-jpegxl-rs = { version = "0.1" } # Провери версията според инсталирания libjxl в Docker
