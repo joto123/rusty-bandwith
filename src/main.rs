@@ -33,7 +33,7 @@ async fn main() {
     let app = Router::new().route("/", get(proxy_handler));
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     
-    println!("Stealth WebP Proxy running on {}", addr);
+    println!("Ultra Stealth Proxy running on {}", addr);
     
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -42,18 +42,24 @@ async fn main() {
 }
 
 async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
-    // Създаваме клиент с пълна поддръжка на браузърни функции
     let client = Client::builder()
         .gzip(true)
         .build()
         .unwrap_or_default();
 
+    // Симулираме заявка от Chrome за изображение
     let res = match client.get(&query.url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .header("Cache-Control", "no-cache")
-        .header("Pragma", "no-cache")
+        .header("Accept-Language", "bg-BG,bg;q=0.9,en;q=0.8")
+        .header("Referer", "https://twitter.com/")
+        // ДОБАВЯМЕ SEC-FETCH ХЕДЪРИ
+        .header("Sec-Fetch-Dest", "image")
+        .header("Sec-Fetch-Mode", "no-cors")
+        .header("Sec-Fetch-Site", "cross-site")
+        .header("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+        .header("Sec-Ch-Ua-Mobile", "?0")
+        .header("Sec-Ch-Ua-Platform", "\"Windows\"")
         .send().await {
             Ok(res) => res,
             Err(_) => return (StatusCode::BAD_REQUEST, "Fetch error").into_response(),
@@ -67,6 +73,7 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
     let img = match image::load_from_memory(&bytes) {
         Ok(i) => i,
         Err(_) => {
+            // Връщаме оригинала, ако не можем да декодираме (напр. ако Twitter върне грешка като картинка)
             let mut headers = HeaderMap::new();
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
             headers.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
