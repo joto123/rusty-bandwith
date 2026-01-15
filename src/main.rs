@@ -32,7 +32,7 @@ async fn main() {
     let app = Router::new().route("/", get(proxy_handler));
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     
-    println!("Ultra Stealth Proxy v2.2 running on {}", addr);
+    println!("Ultra Stealth Proxy v2.3 running on {}", addr);
     
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -46,27 +46,34 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
         .build()
         .unwrap_or_default();
 
+    // Пълни хедъри за симулация на реален браузър
     let res = match client.get(&query.url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+        .header("Accept-Language", "bg-BG,bg;q=0.9,en;q=0.8")
         .header("Referer", "https://twitter.com/")
         .header("Sec-Fetch-Dest", "image")
         .header("Sec-Fetch-Mode", "no-cors")
         .header("Sec-Fetch-Site", "cross-site")
+        .header("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
+        .header("Sec-Ch-Ua-Mobile", "?0")
+        .header("Sec-Ch-Ua-Platform", "\"Windows\"")
         .send().await {
             Ok(res) => res,
             Err(_) => return (StatusCode::BAD_REQUEST, "Fetch error").into_response(),
         };
 
-    // ВАЖНО: Превръщаме байтовете в Vec<u8>, за да имат фиксиран размер
+    // РЕШЕНИЕТО НА ГРЕШКАТА: Превръщаме байтовете в Vec<u8> (собственост върху данните)
     let bytes = match res.bytes().await {
         Ok(b) => b.to_vec(),
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Bytes error").into_response(),
     };
 
+    // Опит за обработка на изображението
     let img = match image::load_from_memory(&bytes) {
         Ok(i) => i,
         Err(_) => {
+            // Ако не е картинка или е грешка, връщаме байтовете като JPEG/PNG директно
             let mut headers = HeaderMap::new();
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
             headers.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
@@ -75,6 +82,8 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
     };
 
     let mut webp_data = Cursor::new(Vec::new());
+    
+    // Опит за запис като WebP
     match img.write_to(&mut webp_data, image::ImageFormat::WebP) {
         Ok(_) => {
             let mut headers = HeaderMap::new();
@@ -84,6 +93,7 @@ async fn proxy_handler(Query(query): Query<ProxyQuery>) -> impl IntoResponse {
             (headers, webp_data.into_inner()).into_response()
         },
         Err(_) => {
+            // Ако WebP записът се провали, връщаме оригинала
             let mut headers = HeaderMap::new();
             headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
             headers.insert(header::CONTENT_TYPE, "image/jpeg".parse().unwrap());
