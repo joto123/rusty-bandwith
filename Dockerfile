@@ -1,22 +1,34 @@
-# Етап 1: Компилиране (използваме последната стабилна версия на Go)
+# Етап 1: Компилиране
 FROM golang:1.23-alpine AS builder
 
-# Инсталираме git за изтегляне на зависимостите
-RUN apk add --no-cache git
+WORKDIR /app
 
-# Изтегляме и компилираме проксито директно
-RUN go install github.com/yigitkonur/go-native-squid-proxy/cmd/proxy@latest
+# Инсталираме прокси сървъра на elazarl (най-използваната Go библиотека за целта)
+RUN go mod init proxy && \
+    go get github.com/elazarl/goproxy && \
+    echo 'package main\n\
+import (\n\
+	"log"\n\
+	"net/http"\n\
+	"os"\n\
+	"github.com/elazarl/goproxy"\n\
+)\n\
+func main() {\n\
+	proxy := goproxy.NewProxyHttpServer()\n\
+	proxy.Verbose = true\n\
+	port := os.Getenv("PORT")\n\
+	if port == "" { port = "8080" }\n\
+	log.Fatal(http.ListenAndServe(":" + port, proxy))\n\
+}' > main.go && \
+    go build -o /proxy main.go
 
 # Етап 2: Финално олекотено изображение
 FROM alpine:latest
+COPY --from=builder /proxy /usr/local/bin/proxy
 
-# Копираме само компилираното бинарно файлче
-COPY --from=builder /go/bin/proxy /usr/local/bin/proxy
-
-# Koyeb изисква порт 8080
+# Koyeb настройки
 ENV PORT=8080
 EXPOSE 8080
 
-# Стартираме проксито, като му казваме да слуша на порта от Koyeb
-# Забележка: -addr :8080 казва на проксито да слуша на всички интерфейси
-CMD ["proxy", "-addr", ":8080"]
+# Стартираме без допълнителни флагове, защото кодът вече чете $PORT
+CMD ["proxy"]
