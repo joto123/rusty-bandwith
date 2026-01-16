@@ -1,24 +1,16 @@
-# Сменяме 1.75 с 1.84 (най-новата към момента)
-FROM rust:1.84-slim-bookworm AS builder
+# Етап на компрометиране (Build)
+FROM golang:1.21-alpine AS builder
+RUN apk add --no-cache git
+RUN go install github.com/mccutchen/compy/cmd/compy@latest
 
-# Останалото остава същото
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+# Финален имидж
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /go/bin/compy /usr/bin/compy
 
-WORKDIR /usr/src/app
-COPY Cargo.toml ./
-
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
-
-COPY . .
-RUN touch src/main.rs && cargo build --release
-
-# --- Runtime ---
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /usr/src/app/target/release/rusty-bandwidth /usr/local/bin/
-
+# Портът за Koyeb
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["rusty-bandwidth"]
+# Стартираме compy с оптимизации за снимки (jpeg и webp качество 50%)
+CMD ["compy", "-host", "0.0.0.0", "-port", "8080", "-jpeg", "50", "-gif", "50", "-gzip"]
