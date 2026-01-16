@@ -1,19 +1,20 @@
-FROM debian:bookworm-slim
+FROM alpine:latest
 
-# Инсталираме ziproxy
-RUN apt-get update && apt-get install -y ziproxy && rm -rf /var/lib/apt/lists/*
+# Инсталираме privoxy
+RUN apk add --no-cache privoxy
 
-# Конфигурираме Ziproxy:
-# 1. Порт 8080 (Koyeb стандарт)
-# 2. Слушане на всички адреси (0.0.0.0)
-# 3. Намаляваме качеството на снимките за пестене на трафик
-RUN sed -i 's/^Port = .*/Port = 8080/' /etc/ziproxy/ziproxy.conf && \
-    sed -i 's/^Address = .*/Address = "0.0.0.0"/' /etc/ziproxy/ziproxy.conf && \
-    sed -i 's/^ImageQuality = .*/ImageQuality = {70,70,70,70}/' /etc/ziproxy/ziproxy.conf
+# Конфигурираме Privoxy за Koyeb
+# 1. Слушане на порт 8080 и адрес 0.0.0.0
+# 2. Активираме компресията (buffer-limit)
+# 3. Премахваме логването, за да пестим ресурси
+RUN sed -i 's/listen-address  127.0.0.1:8118/listen-address  0.0.0.0:8080/' /etc/privoxy/config && \
+    sed -i 's/buffer-limit 4096/buffer-limit 8192/' /etc/privoxy/config && \
+    echo "enable-edit-actions 0" >> /etc/privoxy/config && \
+    echo "toggle 1" >> /etc/privoxy/config
 
 # Експортираме порта
 EXPOSE 8080
 
-# Слагаме флаг -n (no-detach), който държи процеса активен на преден план
-# Това ще попречи на контейнера да се затвори с Exit Code 0
-CMD ["ziproxy", "-d", "-n"]
+# Стартираме Privoxy на преден план (--no-daemon)
+# Това гарантира, че Koyeb няма да изключи инстанцията
+CMD ["privoxy", "--no-daemon", "/etc/privoxy/config"]
