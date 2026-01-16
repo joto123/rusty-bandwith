@@ -1,7 +1,7 @@
 # --- Етап 1: Builder ---
 FROM rust:1.75-bookworm AS builder
 
-# Инсталиране на зависимости за BoringSSL (нужни за reqwest-impersonate)
+# Инсталиране на зависимости за компилиране (reqwest-impersonate изисква тези за BoringSSL)
 RUN apt-get update && apt-get install -y \
     cmake \
     clang \
@@ -10,41 +10,42 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Променливи за стабилна компилация на BoringSSL
+# Конфигурация за стабилен билд в облачна среда
 ENV CC=clang
 ENV CXX=clang++
 ENV AR=llvm-ar
+ENV CARGO_HTTP_MULTIPLEXING=false
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /usr/src/app
 
-# 1. Копираме Cargo.toml за кеширане на зависимостите
+# Копираме Cargo.toml
 COPY Cargo.toml ./
 
-# 2. Създаваме празен проект и компилираме само библиотеките
-# Това спестява огромно количество време при последващи билдове
+# Създаваме празен проект за кеширане на библиотеките
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
 RUN rm -rf src/
 
-# 3. Копираме реалния сорс код
+# Копираме истинския код
 COPY . .
 
-# 4. Финален билд (cargo ще види промяната в main.rs и ще компилира само вашия код)
+# Финален билд на приложението
 RUN touch src/main.rs && cargo build --release
 
-# --- Етап 2: Runtime ---
+# --- Етап 2: Runtime (Минимален размер) ---
 FROM debian:bookworm-slim
 
-# Инсталираме runtime библиотеки (OpenSSL е нужен за работа)
+# Инсталираме само runtime нужните пакети
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Копираме готовия изпълним файл от билдера
+# Копираме изпълнимия файл от builder етапа
 COPY --from=builder /usr/src/app/target/release/rusty-bandwidth /usr/local/bin/
 
-# Конфигурация на порта
+# Koyeb използва порта от променливата PORT
 ENV PORT=8080
 EXPOSE 8080
 
