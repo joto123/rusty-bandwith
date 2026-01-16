@@ -1,31 +1,30 @@
 FROM golang:1.21-alpine AS builder
 
-# Инсталиране на необходимите библиотеки за компилация
-RUN apk add --no-cache vips-dev build-base git
+# Инсталираме всички нужни библиотеки за обработка на изображения
+RUN apk add --no-cache \
+    vips-dev \
+    build-base \
+    git \
+    expat-dev \
+    libwebp-dev \
+    libheif-dev \
+    libjpeg-turbo-dev \
+    libpng-dev
 
 WORKDIR /app
-
-# 1. Копираме първо модулните файлове
 COPY go.mod ./
 COPY go.sum* ./
-
-# 2. Копираме целия код СЕГА (за да може Go да види main.go)
 COPY . .
 
-# 3. ТАЗИ КОМАНДА ЩЕ ДОБАВИ ЛИПСВАЩИТЕ СУМИ:
-RUN go mod download github.com/h2non/bimg
-RUN go mod tidy
-
-# 4. Компилираме
+RUN go mod download
 RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
 
-# Финално леко изображение
 FROM alpine:3.18
-RUN apk add --no-cache vips ca-certificates
+# Инсталираме runtime библиотеките
+RUN apk add --no-cache vips libwebp libheif libjpeg-turbo libpng ca-certificates
 
 WORKDIR /root/
 COPY --from=builder /app/proxy .
 
 EXPOSE 8080
-
 CMD ["./proxy"]
