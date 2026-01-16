@@ -1,152 +1,76 @@
 use axum::{
-    extract::{Query, State},
-    http::{header, HeaderMap, StatusCode},
+    extract::{Query, HeaderMap},
     response::IntoResponse,
     routing::get,
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
-use clap::Parser;
-use reqwest::Client;
+use image::{DynamicImage, ImageOutputFormat};
 use serde::Deserialize;
 use std::io::Cursor;
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-#[derive(Parser )]
-struct Args {
-    #[arg(short, long, env = "PORT", default_value_t = 8080)]
-    port: u16,
-}
 
 #[derive(Deserialize)]
-struct ProxyQuery {
+struct ImageParams {
     url: String,
-    #[serde(default = "default_quality")]
-    l: u8,
 }
 
-fn default_quality() -> u8 { 50 }
+async fn handle_proxy(headers: HeaderMap, Query(params): Query<ImageParams>) -> impl IntoResponse {
+    // 1. Създаваме клиент (използваме стандартен reqwest)
+    let client = reqwest::Client::new();
+    
+    // 2. Изтегляме оригиналното изображение
+    let resp = match client.get(&params.url).send().await {
+        Ok(res) => res.bytes().await.unwrap_or_default(),
+        Err(_) => return "Грешка при теглене".into_response(),
+    };
+
+    // 3. Зареждаме изображението в паметта
+    let img = match image::load_from_memory(&resp) {
+        Ok(i) => i,
+        Err(_) => return "Невалиден формат на изображението".into_response(),
+    };
+
+    // 4. Логика за автоматично оразмеряване
+    let user_agent = headers.get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let target_width = if user_agent.contains("Mobile") || user_agent.contains("Android") || user_agent.contains("iPhone") {
+        600 // За мобилни устройства
+    } else {
+        1200 // За десктоп
+    };
+
+    // Оразмеряваме само ако оригиналът е по-голям от целта
+    let resized_img = if img.width() > target_width {
+        img.resize(target_width, 10000, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    // 5. Конвертиране в WebP
+    let mut buffer = Cursor::new(Vec::new());
+    match resized_img.write_to(&mut buffer, ImageOutputFormat::WebP) {
+        Ok(_) => (),
+        Err(_) => return "Грешка при конвертиране".into_response(),
+    };
+
+    // 6. Връщане на готовото WebP изображение
+    (
+        [("content-type", "image/webp")],
+        buffer.into_inner()
+    ).into_response()
+}
 
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
-    
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let app = Router::new().route("/proxy", get(handle_proxy));
 
-    // Създаваме клиента веднъж и го споделяме чрез Arc, за да е по-ефективно.
-    use reqwest_impersonate::impersonate::Impersonate;
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{}", port);
 
-let client = reqwest_impersonate::Client::builder()
-    .impersonate(Impersonate::Chrome120) // Имитира Chrome 120
-    .enable_ech_grease(true)
-    .cookie_store(true)
-    .build()
-    .expect("Failed to build impersonate client");
-
-let client = Arc::new(client);
-
-    let app = Router::new()
-        .route("/", get(proxy_handler))
-        .with_state(client) // Подаваме клиента като състояние на рутера.
-        .layer(cors);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
-    println!("🚀 Ultra Stealth Proxy v2.6 running on http://{}", addr );
-    
-    axum::Server::bind(&addr)
+    println!("Сървърът стартира на {}", addr);
+    axum::Server::bind(&addr.parse().unwrap())
         .serve(app.into_make_service())
         .await
         .unwrap();
-}
-
-async fn proxy_handler(
-    Query(query): Query<ProxyQuery>,
-    State(client): State<Arc<Client>>, // Получаваме клиента от състоянието.
-    in_headers: HeaderMap, // Получаваме хедърите от входящата заявка.
-) -> impl IntoResponse {
-    
-    // Препращаме повечето хедъри, за да имитираме оригиналната заявка.
-    let mut out_headers = HeaderMap::new();
-    for (name, value) in in_headers.iter() {
-        // Филтрираме хедъри, които не трябва да се препращат директно (напр. Host).
-        if name != header::HOST {
-            out_headers.insert(name.clone(), value.clone());
-        }
-    }
-
-    // Гарантираме, че имаме User-Agent и Referer, които са важни за сайтове като Twitter.
-    if !out_headers.contains_key(header::USER_AGENT) {
-        out_headers.insert(header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".parse().unwrap());
-    }
-    out_headers.insert(header::REFERER, "https://twitter.com/".parse( ).unwrap());
-
-
-    let res = match client.get(&query.url)
-        .headers(out_headers)
-        .send().await {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Fetch error for URL {}: {}", query.url, e);
-                return (StatusCode::BAD_REQUEST, "Fetch error").into_response();
-            },
-        };
-
-    // Проверяваме дали отговорът е успешен.
-    if !res.status().is_success() {
-        eprintln!("Upstream server returned status {} for URL {}", res.status(), query.url);
-        return (res.status(), "Upstream server error").into_response();
-    }
-
-    // Проверяваме Content-Type, преди да опитаме да обработим изображението.
-    let content_type = res.headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
-    let bytes_data = match res.bytes().await {
-        Ok(b) => b.to_vec(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Bytes error").into_response(),
-    };
-
-    // Ако съдържанието не е изображение, просто го връщаме без обработка.
-    if !content_type.starts_with("image/") {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap_or("application/octet-stream".parse().unwrap()));
-        return (headers, bytes_data).into_response();
-    }
-
-    // Опитваме да заредим изображението.
-    let img = match image::load_from_memory(&bytes_data) {
-        Ok(i) => i,
-        Err(_) => {
-            // Ако не успеем, връщаме оригиналните байтове с оригиналния content-type.
-            let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-            return (headers, bytes_data).into_response();
-        }
-    };
-
-    // Конвертираме към WebP.
-    let mut webp_buffer = Vec::new();
-    let mut cursor = Cursor::new(&mut webp_buffer);
-    
-    match img.write_to(&mut cursor, image::ImageFormat::WebP) {
-        Ok(_) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, "image/webp".parse().unwrap());
-            headers.insert(header::CACHE_CONTROL, "public, max-age=31536000".parse().unwrap());
-            (headers, webp_buffer).into_response()
-        },
-        Err(_) => {
-            // Ако конверсията се провали, връщаме оригиналното изображение.
-            let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
-            (headers, bytes_data).into_response()
-        }
-    }
 }
