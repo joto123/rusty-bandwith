@@ -1,46 +1,44 @@
-# Етап 1: Компилация с оптимизирано кеширане
-FROM rust:latest AS builder
-WORKDIR /usr/src/app
+# Етап 1: Компилация (Builder)
+FROM rust:1.75-bookworm AS builder
 
-# Инсталиране на системни зависимости за OpenSSL и Image обработка
-# Тази стъпка се изпълнява рядко, затова е в началото.
+# Инсталиране на необходимите инструменти за компилация
+# reqwest-impersonate често изисква cmake и clang за изграждане на бордовите TLS библиотеки
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     cmake \
+    clang \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# 1. Копираме само файловете за зависимостите.
-# Този слой ще се кешира, докато Cargo.toml/Cargo.lock не се променят.
-COPY Cargo.toml Cargo.lock ./
+WORKDIR /usr/src/app
 
-# 2. Създаваме празен проект и билдваме само зависимостите.
-# Това е най-бавната част и ще се изпълнява само при промяна на зависимостите.
-RUN mkdir src/ && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release
+# Копираме Cargo файловете първо за кеширане на слоевете
+COPY Cargo.toml ./
+# Създаваме празен main.rs, за да изтеглим и компилираме само зависимостите
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release
+RUN rm -f target/release/deps/rusty_bandwidth*
 
-# 3. Сега копираме целия сорс код.
-# Промените в кода ще анулират кеша само оттук нататък.
-COPY src ./src
+# Сега копираме истинския код и компилираме
+COPY . .
+RUN cargo build --release
 
-# 4. Компилираме отново.
-# Този път cargo ще преизползва вече компилираните зависимости и ще компилира само нашия код, което е много по-бързо.
-# Използваме `touch` за да сме сигурни, че промените се засичат.
-RUN touch src/main.rs && cargo build --release
-
-# Етап 2: Лек образ за работа (без промени тук)
+# Етап 2: Лек образ за работа (Runtime)
 FROM debian:bookworm-slim
+
+# Инсталираме ca-certificates (задължително за HTTPS заявки) и OpenSSL
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Копираме компилирания файл от builder етапа.
+# Копираме бинарния файл от builder-а
 COPY --from=builder /usr/src/app/target/release/rusty-bandwidth /usr/local/bin/
 
+# Настройки на средата
 ENV PORT=8080
 EXPOSE 8080
 
+# Стартиране
 CMD ["rusty-bandwidth"]
