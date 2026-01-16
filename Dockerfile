@@ -1,15 +1,23 @@
 FROM golang:1.21-alpine AS builder
 
-# Инсталиране на библиотеки за обработка на изображения
-RUN apk add --no-cache vips-dev build-base
+# Инсталиране на библиотеки за изображения (vips-dev)
+RUN apk add --no-cache vips-dev build-base git
 
 WORKDIR /app
-COPY go.mod ./
-RUN go mod download
 
+# Копираме само go.mod
+COPY go.mod ./
+
+# ТАЗИ КОМАНДА Е ВАЖНА: Тя ще генерира go.sum автоматично
+RUN go mod tidy
+
+# Копираме останалия код
 COPY . .
+
+# Компилираме
 RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
 
+# Финално изображение
 FROM alpine:3.18
 RUN apk add --no-cache vips ca-certificates
 
