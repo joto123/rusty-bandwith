@@ -1,22 +1,20 @@
 FROM golang:1.21-alpine AS builder
 
-# Инсталиране на необходими зависимости
-RUN apk add --no-cache git
+# Инсталиране на библиотеки за обработка на изображения
+RUN apk add --no-cache vips-dev build-base
 
 WORKDIR /app
-# Клонираме оригиналния код на Janifr
-RUN git clone https://github.com/janifr/bandwidth-hero-proxy.git .
+COPY go.mod ./
+RUN go mod download
 
-# Компилиране на приложението
-RUN go build -o proxy main.go
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
 
-# Финално изображение
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates libc6-compat
+FROM alpine:3.18
+RUN apk add --no-cache vips ca-certificates
+
 WORKDIR /root/
 COPY --from=builder /app/proxy .
 
-# Портът, на който Koyeb ще слуша
 EXPOSE 8080
-
 CMD ["./proxy"]
