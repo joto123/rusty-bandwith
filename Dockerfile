@@ -3,18 +3,25 @@ FROM alpine:latest
 # Инсталираме privoxy
 RUN apk add --no-cache privoxy
 
-# Конфигурираме Privoxy за Koyeb
-# 1. Слушане на порт 8080 и адрес 0.0.0.0
-# 2. Активираме компресията (buffer-limit)
-# 3. Премахваме логването, за да пестим ресурси
-RUN sed -i 's/listen-address  127.0.0.1:8118/listen-address  0.0.0.0:8080/' /etc/privoxy/config && \
-    sed -i 's/buffer-limit 4096/buffer-limit 8192/' /etc/privoxy/config && \
-    echo "enable-edit-actions 0" >> /etc/privoxy/config && \
-    echo "toggle 1" >> /etc/privoxy/config
+# Създаваме чиста конфигурация директно
+RUN echo "confdir /etc/privoxy" > /etc/privoxy/config.new && \
+    echo "logdir /var/log/privoxy" >> /etc/privoxy/config.new && \
+    echo "filterfile default.filter" >> /etc/privoxy/config.new && \
+    echo "filterfile user.filter" >> /etc/privoxy/config.new && \
+    echo "actionsfile match-all.action" >> /etc/privoxy/config.new && \
+    echo "actionsfile default.action" >> /etc/privoxy/config.new && \
+    echo "actionsfile user.action" >> /etc/privoxy/config.new && \
+    echo "listen-address 0.0.0.0:8080" >> /etc/privoxy/config.new && \
+    echo "toggle 1" >> /etc/privoxy/config.new && \
+    echo "enable-remote-toggle 0" >> /etc/privoxy/config.new && \
+    echo "enable-remote-http-toggle 0" >> /etc/privoxy/config.new && \
+    echo "enable-edit-actions 0" >> /etc/privoxy/config.new && \
+    echo "buffer-limit 8192" >> /etc/privoxy/config.new && \
+    echo "keep-alive-timeout 5" >> /etc/privoxy/config.new && \
+    mv /etc/privoxy/config.new /etc/privoxy/config
 
-# Експортираме порта
+# Експортираме порта за Koyeb
 EXPOSE 8080
 
-# Стартираме Privoxy на преден план (--no-daemon)
-# Това гарантира, че Koyeb няма да изключи инстанцията
+# Стартираме Privoxy на преден план
 CMD ["privoxy", "--no-daemon", "/etc/privoxy/config"]
