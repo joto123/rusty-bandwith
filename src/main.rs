@@ -38,7 +38,16 @@ async fn main() {
         .allow_headers(Any);
 
     // Създаваме клиента веднъж и го споделяме чрез Arc, за да е по-ефективно.
-    let client = Arc::new(Client::new());
+    use reqwest_impersonate::impersonate::Impersonate;
+
+let client = reqwest_impersonate::Client::builder()
+    .impersonate(Impersonate::Chrome120) // Имитира Chrome 120
+    .enable_ech_grease(true)
+    .cookie_store(true)
+    .build()
+    .expect("Failed to build impersonate client");
+
+let client = Arc::new(client);
 
     let app = Router::new()
         .route("/", get(proxy_handler))
