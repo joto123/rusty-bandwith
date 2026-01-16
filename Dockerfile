@@ -1,44 +1,46 @@
-# Етап 1: Компилация (Builder)
+# --- Етап 1: Builder ---
 FROM rust:1.75-bookworm AS builder
 
-# Инсталиране на необходимите инструменти за компилация
-# reqwest-impersonate често изисква cmake и clang за изграждане на бордовите TLS библиотеки
+# Инсталиране на критичните системни зависимости за BoringSSL/reqwest-impersonate
 RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
     cmake \
     clang \
+    pkg-config \
+    libssl-dev \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 
-# Копираме Cargo файловете първо за кеширане на слоевете
+# Копираме Cargo.toml за кеширане
 COPY Cargo.toml ./
-# Създаваме празен main.rs, за да изтеглим и компилираме само зависимостите
+
+# Създаваме "fake" проект, за да компилираме само зависимостите (спестява много време)
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
-RUN rm -f target/release/deps/rusty_bandwidth*
+RUN rm -rf src/
 
-# Сега копираме истинския код и компилираме
+# Сега копираме истинския код
 COPY . .
-RUN cargo build --release
 
-# Етап 2: Лек образ за работа (Runtime)
+# Актуализираме времето на main.rs, за да форсираме нов билд върху кешираните зависимости
+RUN touch src/main.rs && cargo build --release
+
+# --- Етап 2: Runtime ---
 FROM debian:bookworm-slim
 
-# Инсталираме ca-certificates (задължително за HTTPS заявки) и OpenSSL
+# Инсталираме само нужните неща за работа (runtime)
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Копираме бинарния файл от builder-а
+# Копираме готовия бинарен файл
 COPY --from=builder /usr/src/app/target/release/rusty-bandwidth /usr/local/bin/
 
-# Настройки на средата
+# Порт по подразбиране
 ENV PORT=8080
 EXPOSE 8080
 
-# Стартиране
+# Стартираме
 CMD ["rusty-bandwidth"]
