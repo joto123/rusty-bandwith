@@ -5,24 +5,22 @@ RUN apk add --no-cache vips-dev build-base git
 
 WORKDIR /app
 
-# Копираме модулните файлове
+# 1. Копираме първо модулните файлове
 COPY go.mod ./
-# Ако имаш go.sum, го копираме, ако ли не - ще се създаде
 COPY go.sum* ./
 
-# ТАЗИ КОМАНДА ОПРАВЯ ГРЕШКАТА: 
-# Тя автоматично изтегля зависимостите и генерира правилен go.sum
-RUN go mod tidy
-
-# Копираме останалия код
+# 2. Копираме целия код СЕГА (за да може Go да види main.go)
 COPY . .
 
-# Компилираме с активиран CGO за bimg (vips)
+# 3. ТАЗИ КОМАНДА ЩЕ ДОБАВИ ЛИПСВАЩИТЕ СУМИ:
+RUN go mod download github.com/h2non/bimg
+RUN go mod tidy
+
+# 4. Компилираме
 RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
 
 # Финално леко изображение
 FROM alpine:3.18
-# Инсталираме само runtime библиотеките
 RUN apk add --no-cache vips ca-certificates
 
 WORKDIR /root/
