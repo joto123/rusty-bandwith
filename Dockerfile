@@ -1,34 +1,33 @@
-# Етап 1: Компилиране
-FROM golang:1.23-alpine AS builder
+# Етап 1: Компилиране на оригиналния Compy
+FROM golang:1.23-bookworm AS builder
 
+# Инсталираме зависимости за работа с изображения (важно за функциите на Compy)
+RUN apt-get update && apt-get install -y libjpeg-dev libpng-dev
+
+# Изтегляме оригиналния код
+RUN git clone https://github.com/andrewgaul/compy.git /app
 WORKDIR /app
 
-# Инсталираме прокси сървъра на elazarl (най-използваната Go библиотека за целта)
-RUN go mod init proxy && \
-    go get github.com/elazarl/goproxy && \
-    echo 'package main\n\
-import (\n\
-	"log"\n\
-	"net/http"\n\
-	"os"\n\
-	"github.com/elazarl/goproxy"\n\
-)\n\
-func main() {\n\
-	proxy := goproxy.NewProxyHttpServer()\n\
-	proxy.Verbose = true\n\
-	port := os.Getenv("PORT")\n\
-	if port == "" { port = "8080" }\n\
-	log.Fatal(http.ListenAndServe(":" + port, proxy))\n\
-}' > main.go && \
-    go build -o /proxy main.go
+# Компилираме
+RUN go build -o compy .
 
-# Етап 2: Финално олекотено изображение
-FROM alpine:latest
-COPY --from=builder /proxy /usr/local/bin/proxy
+# Етап 2: Олекотено финално изображение
+FROM debian:bookworm-slim
 
-# Koyeb настройки
+# Инсталираме библиотеките, необходими за компресията в движение
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libjpeg62-turbo \
+    libpng16-16 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копираме компилираното прокси
+COPY --from=builder /app/compy /usr/local/bin/compy
+
+# Настройки за Koyeb
+# Compy функции: -gzip (компресия), -jpeg-quality (оптимизация)
 ENV PORT=8080
 EXPOSE 8080
 
-# Стартираме без допълнителни флагове, защото кодът вече чете $PORT
-CMD ["proxy"]
+# Стартираме с флаговете, които правят Compy това, което е
+CMD ["sh", "-c", "compy -http-addr :$PORT -gzip -jpeg-quality 70"]
