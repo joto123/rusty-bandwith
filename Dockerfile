@@ -1,33 +1,37 @@
-# Етап 1: Компилиране на оригиналния Compy
+# Етап 1: Компилиране на Compy
 FROM golang:1.23-bookworm AS builder
 
-# Инсталираме зависимости за работа с изображения (важно за функциите на Compy)
-RUN apt-get update && apt-get install -y libjpeg-dev libpng-dev
+# Инсталираме системни зависимости за изображения
+RUN apt-get update && apt-get install -y libjpeg-dev libpng-dev git
 
-# Изтегляме оригиналния код
+# Клонираме оригиналния код
 RUN git clone https://github.com/andrewgaul/compy.git /app
 WORKDIR /app
 
-# Компилираме
-RUN go build -o compy .
+# --- КРИТИЧНАТА КОРЕКЦИЯ ТУК ---
+# Инициализираме модул и теглим зависимостите ръчно
+RUN go mod init github.com/andrewgaul/compy && \
+    go get github.com/dsnet/compress/bzip2 && \
+    go get github.com/nfnt/resize && \
+    go mod tidy && \
+    go build -o compy .
 
-# Етап 2: Олекотено финално изображение
+# Етап 2: Финално олекотено изображение
 FROM debian:bookworm-slim
 
-# Инсталираме библиотеките, необходими за компресията в движение
+# Инсталираме само нужните библиотеки за работа (Runtime)
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libjpeg62-turbo \
     libpng16-16 \
     && rm -rf /var/lib/apt/lists/*
 
-# Копираме компилираното прокси
+# Копираме готовия бинарен файл
 COPY --from=builder /app/compy /usr/local/bin/compy
 
 # Настройки за Koyeb
-# Compy функции: -gzip (компресия), -jpeg-quality (оптимизация)
 ENV PORT=8080
 EXPOSE 8080
 
-# Стартираме с флаговете, които правят Compy това, което е
+# Стартираме Compy с функциите му за компресия и оптимизация
 CMD ["sh", "-c", "compy -http-addr :$PORT -gzip -jpeg-quality 70"]
