@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/h2non/bimg"
 )
@@ -37,16 +36,15 @@ func handleCompress(w http.ResponseWriter, r *http.Request) {
 		quality = 50
 	}
 
-	// 1. СЪЗДАВАНЕ НА КЛИЕНТ С HEADERS за заобикаляне на защити
+	// Използваме клиент с хедъри, за да не ни блокират социалните мрежи
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", imageUrl, nil)
 	
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		// Ако има грешка, не пренасочваме, за да не счупим CSP
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
@@ -58,7 +56,6 @@ func handleCompress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. ОБРАБОТКА С BIMG
 	options := bimg.Options{
 		Quality:       quality,
 		Type:          bimg.WEBP,
@@ -68,13 +65,12 @@ func handleCompress(w http.ResponseWriter, r *http.Request) {
 
 	newImage, err := bimg.NewImage(inputData).Process(options)
 	if err != nil {
-		// Ако bimg не успее, връщаме оригинала с неговия тип
+		// Ако bimg не успее (непознат формат), връщаме оригиналната картинка
 		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 		w.Write(inputData)
 		return
 	}
 
-	// 3. ПРЕМАХВАНЕ НА ОГРАНИЧЕНИЯТА ЗА БРАУЗЪРА
 	w.Header().Set("Content-Type", "image/webp")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("X-Original-Size", strconv.Itoa(len(inputData)))
