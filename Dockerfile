@@ -1,5 +1,7 @@
+# ---------- BUILDER ----------
 FROM golang:1.21-bookworm AS builder
 
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     libvips-dev \
     libwebp-dev \
@@ -7,21 +9,26 @@ RUN apt-get update && apt-get install -y \
     libjpeg62-turbo-dev \
     libpng-dev \
     build-essential \
-    git \
-    pkg-config
+    pkg-config \
+    git
 
 WORKDIR /app
 
+# Copy only go.mod first for caching
 COPY go.mod ./
 RUN go mod tidy
 
+# Copy the rest of the source
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
+# Build binary (stripped, smaller)
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o proxy main.go
 
 
+# ---------- RUNTIME ----------
 FROM debian:bookworm-slim
 
+# Install only runtime libs (much smaller)
 RUN apt-get update && apt-get install -y \
     libvips \
     libwebp7 \
@@ -33,6 +40,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /root/
 
+# Copy binary only (no source code)
 COPY --from=builder /app/proxy .
 
 EXPOSE 8080
