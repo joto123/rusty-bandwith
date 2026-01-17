@@ -1,47 +1,37 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.21-bookworm AS builder
 
-# 1. Инсталираме системните зависимости за компилиране на bimg/vips
-RUN apk add --no-cache \
-    vips-dev \
-    build-base \
+RUN apt-get update && apt-get install -y \
+    libvips-dev \
+    build-essential \
     git \
-    expat-dev \
-    libwebp-dev \
-    libheif-dev \
-    libjpeg-turbo-dev \
-    libpng-dev
+    pkg-config
 
 WORKDIR /app
 
-# 2. Копираме файловете на проекта
-COPY go.mod ./
-COPY go.sum* ./
-COPY . .
-
-# 3. Актуализираме и изтегляме Go зависимостите
-# Това ще добави липсващия github.com/h2non/bimg в go.sum
-RUN go mod tidy
+COPY go.mod go.sum ./
 RUN go mod download
 
-# 4. Компилираме приложението
+COPY . .
+
 RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
 
-# 5. Финално леко изображение (Runtime)
-FROM alpine:3.18
 
-# Инсталираме само библиотеките, нужни за работата на приложението
-RUN apk add --no-cache \
-    vips \
+# Runtime image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libvips \
     libwebp \
-    libheif \
-    libjpeg-turbo \
-    libpng \
-    ca-certificates
+    libheif1 \
+    libjpeg62-turbo \
+    libpng16-16 \
+    ca-certificates && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
+
 COPY --from=builder /app/proxy .
 
-# Експортираме порта (Koyeb по подразбиране търси 8080)
 EXPOSE 8080
 
 CMD ["./proxy"]
