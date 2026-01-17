@@ -8,15 +8,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
+COPY go.mod ./
+RUN go mod tidy
 
 COPY . .
 
 RUN CGO_ENABLED=1 GOOS=linux go build -o proxy main.go
 
 
-# Runtime image
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
