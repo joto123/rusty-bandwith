@@ -29,12 +29,11 @@ func handleCompress(w http.ResponseWriter, r *http.Request) {
 	imageUrl := r.URL.Query().Get("url")
 	qualityStr := r.URL.Query().Get("l")
 
-	// Проверка за празен URL
-	if imageUrl == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, "Error: Missing 'url' parameter.")
-		return
-	}
+if imageUrl == "" {
+    w.WriteHeader(http.StatusOK)
+    fmt.Fprint(w, "Proxy is online ✅")
+    return
+}
 
 	// Парсване на качеството
 	quality, err := strconv.Atoi(qualityStr)
