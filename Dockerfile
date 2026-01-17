@@ -2,6 +2,10 @@ FROM golang:1.21-bookworm AS builder
 
 RUN apt-get update && apt-get install -y \
     libvips-dev \
+    libwebp-dev \
+    libheif-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
     build-essential \
     git \
     pkg-config
@@ -20,7 +24,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
     libvips \
-    libwebp \
+    libwebp7 \
     libheif1 \
     libjpeg62-turbo \
     libpng16-16 \
