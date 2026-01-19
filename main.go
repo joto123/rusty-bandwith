@@ -29,7 +29,7 @@ var (
 
 func main() {
 	// CPU Оптимизация: Казваме на vips да не претоварва процесора
-	bimg.VipsConcurrencySet(1)
+	//bimg.VipsConcurrencySet(1)
 	bimg.VipsCacheSetMax(0)
 
 	var err error
