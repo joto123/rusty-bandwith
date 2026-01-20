@@ -14,7 +14,7 @@ import (
 
 const (
 	MaxImageSize = 5 * 1024 * 1024 // 5MB (Защита от OOM)
-	CacheSize    = 50              // 50 изображения в RAM (Защита от OOM)
+	CacheSize    = 100              // 50 изображения в RAM (Защита от OOM)
 )
 
 type CachedImage struct {
